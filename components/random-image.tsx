@@ -36,6 +36,8 @@ const SOURCES = [
   },
 ]
 
+type UploadedImage = { id: number; url: string; name: string }
+
 export function RandomImage() {
   const [seed, setSeed] = useState(1)
   const [sourceIndex, setSourceIndex] = useState(0)
@@ -44,36 +46,49 @@ export function RandomImage() {
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
-  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [uploads, setUploads] = useState<UploadedImage[]>([])
+  const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadsRef = useRef<UploadedImage[]>([])
+  const nextUploadId = useRef(0)
 
-  const source = SOURCES[sourceIndex]
-  const url = uploadedUrl ?? (source.dynamic ? dynamicUrl : source.build!(seed))
-  const sourceName = uploadedUrl ? "Your upload" : source.name
+  useEffect(() => {
+    uploadsRef.current = uploads
+  }, [uploads])
 
-  // Revoke the previous object URL whenever it's replaced or the component unmounts.
+  // Revoke every uploaded object URL when the component unmounts.
   useEffect(() => {
     return () => {
-      if (uploadedUrl) URL.revokeObjectURL(uploadedUrl)
+      uploadsRef.current.forEach((u) => URL.revokeObjectURL(u.url))
     }
-  }, [uploadedUrl])
+  }, [])
+
+  const source = SOURCES[sourceIndex]
+  const activeUpload = uploads.find((u) => u.id === activeUploadId)
+  const url = activeUpload ? activeUpload.url : source.dynamic ? dynamicUrl : source.build!(seed)
+  const sourceName = activeUpload ? `Your upload: ${activeUpload.name}` : source.name
 
   const shuffle = useCallback(async () => {
     setLoading(true)
     setLoadId((id) => id + 1)
-    setUploadedUrl(null)
-    setUploadedFile(null)
-    const newIndex = Math.floor(Math.random() * SOURCES.length)
-    const newSeed = Math.floor(Math.random() * 100000)
-    setSourceIndex(newIndex)
-    setSeed(newSeed)
+    const currentUploads = uploadsRef.current
+    const poolSize = SOURCES.length + currentUploads.length
+    const pick = Math.floor(Math.random() * poolSize)
 
-    const newSource = SOURCES[newIndex]
-    if (newSource.dynamic) {
-      const res = await fetch(newSource.endpoint!)
-      const data = await res.json()
-      setDynamicUrl(data.url ?? "")
+    if (pick < SOURCES.length) {
+      setActiveUploadId(null)
+      const newSeed = Math.floor(Math.random() * 100000)
+      setSourceIndex(pick)
+      setSeed(newSeed)
+
+      const newSource = SOURCES[pick]
+      if (newSource.dynamic) {
+        const res = await fetch(newSource.endpoint!)
+        const data = await res.json()
+        setDynamicUrl(data.url ?? "")
+      }
+    } else {
+      setActiveUploadId(currentUploads[pick - SOURCES.length].id)
     }
   }, [])
 
@@ -85,10 +100,11 @@ export function RandomImage() {
     const file = e.target.files?.[0]
     e.target.value = ""
     if (!file) return
+    const id = nextUploadId.current++
+    setUploads((prev) => [...prev, { id, url: URL.createObjectURL(file), name: file.name }])
+    setActiveUploadId(id)
     setLoading(true)
-    setLoadId((id) => id + 1)
-    setUploadedFile(file)
-    setUploadedUrl(URL.createObjectURL(file))
+    setLoadId((n) => n + 1)
   }, [])
 
   const download = useCallback(async () => {
@@ -99,7 +115,7 @@ export function RandomImage() {
       const objectUrl = URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = objectUrl
-      link.download = uploadedFile ? uploadedFile.name : `random-image-${seed}.${source.ext}`
+      link.download = activeUpload ? activeUpload.name : `random-image-${seed}.${source.ext}`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -107,7 +123,7 @@ export function RandomImage() {
     } finally {
       setDownloading(false)
     }
-  }, [url, seed, source.ext, uploadedFile])
+  }, [url, seed, source.ext, activeUpload])
 
   return (
     <div className="w-full max-w-2xl">
