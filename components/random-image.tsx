@@ -9,9 +9,11 @@ import {
   Minimize2,
   Pause,
   Play,
+  Search,
   Shuffle,
   SlidersHorizontal,
   Upload,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { readFavorites, writeFavorites } from "@/lib/favorites"
@@ -51,6 +53,12 @@ const SOURCES = [
 
 type UploadedImage = { url: string; name: string }
 
+const SEARCH_SOURCES = [
+  { name: "Pexels", endpoint: "/api/search-pexels" },
+  { name: "Unsplash", endpoint: "/api/search-unsplash" },
+  { name: "Pixabay", endpoint: "/api/search-pixabay" },
+]
+
 const RECENT_HISTORY_SIZE = 8
 const MAX_SHUFFLE_ATTEMPTS = 6
 const COMMUNITY_NAME = "Community uploads"
@@ -85,10 +93,15 @@ export function RandomImage() {
   const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
   const [enabledSources, setEnabledSources] = useState<string[]>(ALL_CATEGORY_NAMES)
   const [showFilters, setShowFilters] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const [searchProvider, setSearchProvider] = useState("")
+  const [showSearch, setShowSearch] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
   const recentHistoryRef = useRef<string[]>([])
   const enabledSourcesRef = useRef<string[]>(ALL_CATEGORY_NAMES)
+  const searchQueryRef = useRef("")
 
   useEffect(() => {
     uploadsRef.current = uploads
@@ -103,6 +116,10 @@ export function RandomImage() {
     enabledSourcesRef.current = enabledSources
   }, [enabledSources])
 
+  useEffect(() => {
+    searchQueryRef.current = searchQuery
+  }, [searchQuery])
+
   const toggleSourceFilter = useCallback((name: string) => {
     setEnabledSources((prev) => {
       const next = prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
@@ -113,13 +130,42 @@ export function RandomImage() {
 
   const source = SOURCES[sourceIndex]
   const activeUpload = uploads.find((u) => u.url === activeUploadUrl)
-  const url = activeUpload ? activeUpload.url : source.dynamic ? dynamicUrl : source.build!(seed)
-  const sourceName = activeUpload ? `Community upload: ${activeUpload.name}` : source.name
+  const url = searchQuery ? dynamicUrl : activeUpload ? activeUpload.url : source.dynamic ? dynamicUrl : source.build!(seed)
+  const sourceName = searchQuery
+    ? `Search "${searchQuery}" via ${searchProvider}`
+    : activeUpload
+      ? `Community upload: ${activeUpload.name}`
+      : source.name
   const isFavorited = favorites.some((f) => f.url === url)
 
   const shuffle = useCallback(async () => {
     setLoading(true)
     setLoadId((id) => id + 1)
+
+    const query = searchQueryRef.current
+    if (query) {
+      for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
+        const provider = SEARCH_SOURCES[Math.floor(Math.random() * SEARCH_SOURCES.length)]
+        const res = await fetch(`${provider.endpoint}?q=${encodeURIComponent(query)}`)
+        const data = await res.json()
+        const resultUrl: string = data.url ?? ""
+
+        if (resultUrl && recentHistoryRef.current.includes(resultUrl) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+          continue
+        }
+
+        setActiveUploadUrl(null)
+        setDynamicUrl(resultUrl)
+        setCredit(data.credit ?? "")
+        setSearchProvider(provider.name)
+        if (resultUrl) {
+          recentHistoryRef.current = [...recentHistoryRef.current, resultUrl].slice(-RECENT_HISTORY_SIZE)
+        }
+        return
+      }
+      return
+    }
+
     const enabled = enabledSourcesRef.current
     const activeSourceIndices = SOURCES.map((_, i) => i).filter((i) => enabled.includes(SOURCES[i].name))
     const includeCommunity = enabled.includes(COMMUNITY_NAME)
@@ -198,6 +244,28 @@ export function RandomImage() {
     }
   }, [])
 
+  const performSearch = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault()
+      const trimmed = searchInput.trim()
+      if (!trimmed) return
+      searchQueryRef.current = trimmed
+      setSearchQuery(trimmed)
+      recentHistoryRef.current = []
+      shuffle()
+    },
+    [searchInput, shuffle],
+  )
+
+  const clearSearch = useCallback(() => {
+    searchQueryRef.current = ""
+    setSearchQuery("")
+    setSearchInput("")
+    setShowSearch(false)
+    recentHistoryRef.current = []
+    shuffle()
+  }, [shuffle])
+
   // Load the shared gallery once on mount, then start shuffling.
   useEffect(() => {
     let cancelled = false
@@ -247,6 +315,12 @@ export function RandomImage() {
     }
   }, [])
 
+  const fileName = activeUpload
+    ? activeUpload.name
+    : searchQuery
+      ? `${searchQuery.trim().replace(/\s+/g, "-")}-${Date.now()}.jpg`
+      : `random-image-${seed}.${source.ext}`
+
   const download = useCallback(async () => {
     try {
       setDownloading(true)
@@ -255,7 +329,7 @@ export function RandomImage() {
       const objectUrl = URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = objectUrl
-      link.download = activeUpload ? activeUpload.name : `random-image-${seed}.${source.ext}`
+      link.download = fileName
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -263,7 +337,7 @@ export function RandomImage() {
     } finally {
       setDownloading(false)
     }
-  }, [url, seed, source.ext, activeUpload])
+  }, [url, fileName])
 
   const toggleFavorite = useCallback(() => {
     setFavorites((prev) => {
@@ -273,7 +347,7 @@ export function RandomImage() {
             ...prev,
             {
               url,
-              name: activeUpload ? activeUpload.name : `random-image-${seed}.${source.ext}`,
+              name: fileName,
               sourceName,
               credit: credit || undefined,
               savedAt: Date.now(),
@@ -282,7 +356,7 @@ export function RandomImage() {
       writeFavorites(next)
       return next
     })
-  }, [url, seed, source.ext, activeUpload, sourceName, credit])
+  }, [url, fileName, sourceName, credit])
 
   return (
     <div className="w-full max-w-2xl">
@@ -394,9 +468,37 @@ export function RandomImage() {
           >
             <SlidersHorizontal className="size-4" aria-hidden="true" />
           </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => setShowSearch((s) => !s)}
+            aria-label="Search by keyword"
+            title="Search by keyword"
+          >
+            <Search className="size-4" aria-hidden="true" />
+          </Button>
           </div>
         </div>
       </div>
+      {showSearch && (
+        <form onSubmit={performSearch} className="mt-4 flex gap-2">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search a keyword, e.g. mountains"
+            className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring"
+          />
+          <Button type="submit" disabled={!searchInput.trim()}>
+            Search
+          </Button>
+          {searchQuery && (
+            <Button type="button" variant="secondary" size="icon" onClick={clearSearch} aria-label="Clear search" title="Clear search">
+              <X className="size-4" aria-hidden="true" />
+            </Button>
+          )}
+        </form>
+      )}
       {showFilters && (
         <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-sm">
           <p className="mb-3 text-sm font-medium">Sources to include</p>
