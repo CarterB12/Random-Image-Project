@@ -38,6 +38,9 @@ const SOURCES = [
 
 type UploadedImage = { url: string; name: string }
 
+const RECENT_HISTORY_SIZE = 8
+const MAX_SHUFFLE_ATTEMPTS = 6
+
 export function RandomImage() {
   const [seed, setSeed] = useState(1)
   const [sourceIndex, setSourceIndex] = useState(0)
@@ -51,6 +54,7 @@ export function RandomImage() {
   const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
+  const recentHistoryRef = useRef<string[]>([])
 
   useEffect(() => {
     uploadsRef.current = uploads
@@ -66,22 +70,62 @@ export function RandomImage() {
     setLoadId((id) => id + 1)
     const currentUploads = uploadsRef.current
     const poolSize = SOURCES.length + currentUploads.length
-    const pick = Math.floor(Math.random() * poolSize)
 
-    if (pick < SOURCES.length) {
-      setActiveUploadUrl(null)
-      const newSeed = Math.floor(Math.random() * 100000)
-      setSourceIndex(pick)
-      setSeed(newSeed)
+    let candidateIsUpload = false
+    let candidateSourceIndex = 0
+    let candidateSeed = 0
+    let candidateUrl = ""
 
-      const newSource = SOURCES[pick]
-      if (newSource.dynamic) {
-        const res = await fetch(newSource.endpoint!)
-        const data = await res.json()
-        setDynamicUrl(data.url ?? "")
+    for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
+      const pick = Math.floor(Math.random() * poolSize)
+
+      if (pick < SOURCES.length) {
+        const candidateSource = SOURCES[pick]
+        const newSeed = Math.floor(Math.random() * 100000)
+        let url: string
+        if (candidateSource.dynamic) {
+          const res = await fetch(candidateSource.endpoint!)
+          const data = await res.json()
+          url = data.url ?? ""
+        } else {
+          url = candidateSource.build!(newSeed)
+        }
+
+        if (url && recentHistoryRef.current.includes(url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+          continue
+        }
+
+        candidateIsUpload = false
+        candidateSourceIndex = pick
+        candidateSeed = newSeed
+        candidateUrl = url
+        break
+      } else {
+        const candidate = currentUploads[pick - SOURCES.length]
+
+        if (recentHistoryRef.current.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+          continue
+        }
+
+        candidateIsUpload = true
+        candidateUrl = candidate.url
+        break
       }
+    }
+
+    if (candidateIsUpload) {
+      setActiveUploadUrl(candidateUrl)
     } else {
-      setActiveUploadUrl(currentUploads[pick - SOURCES.length].url)
+      setActiveUploadUrl(null)
+      setSourceIndex(candidateSourceIndex)
+      setSeed(candidateSeed)
+      if (SOURCES[candidateSourceIndex].dynamic) {
+        setDynamicUrl(candidateUrl)
+      }
+    }
+
+    if (candidateUrl) {
+      recentHistoryRef.current = [...recentHistoryRef.current, candidateUrl].slice(-RECENT_HISTORY_SIZE)
     }
   }, [])
 
