@@ -1,12 +1,10 @@
 "use client"
-
 import { useCallback, useEffect, useState } from "react"
 import { Download, Loader2, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const WIDTH = 1200
 const HEIGHT = 800
-
 const SOURCES = [
   {
     name: "Lorem Picsum",
@@ -19,15 +17,9 @@ const SOURCES = [
     build: (seed: number) => `https://loremflickr.com/${WIDTH}/${HEIGHT}?lock=${seed}`,
   },
   {
-    name: "RoboHash",
-    ext: "png",
-    build: (seed: number) => `https://robohash.org/${seed}?size=${WIDTH}x${HEIGHT}`,
-  },
-  {
-    name: "DiceBear",
-    ext: "svg",
-    build: (seed: number) =>
-      `https://api.dicebear.com/9.x/shapes/svg?seed=${seed}&size=${WIDTH}`,
+    name: "Pexels",
+    ext: "jpg",
+    dynamic: true,
   },
 ]
 
@@ -36,14 +28,24 @@ export function RandomImage() {
   const [sourceIndex, setSourceIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  const [pexelsUrl, setPexelsUrl] = useState("") // ← NEW: holds the URL once Pexels responds
 
   const source = SOURCES[sourceIndex]
-  const url = source.build(seed)
+  const url = source.dynamic ? pexelsUrl : source.build!(seed) // ← CHANGED
 
-  const shuffle = useCallback(() => {
+  const shuffle = useCallback(async () => { // ← CHANGED: now async
     setLoading(true)
-    setSeed(Math.floor(Math.random() * 100000))
-    setSourceIndex(Math.floor(Math.random() * SOURCES.length))
+    const newIndex = Math.floor(Math.random() * SOURCES.length)
+    const newSeed = Math.floor(Math.random() * 100000)
+    setSourceIndex(newIndex)
+    setSeed(newSeed)
+
+    if (SOURCES[newIndex].dynamic) {
+      // NEW: ask our own server route instead of building a URL directly
+      const res = await fetch("/api/random-photo")
+      const data = await res.json()
+      setPexelsUrl(data.url)
+    }
   }, [])
 
   useEffect(() => {
@@ -78,7 +80,6 @@ export function RandomImage() {
           Shuffle for a fresh image and download your favorite.
         </p>
       </div>
-
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="relative flex aspect-[3/2] items-center justify-center bg-muted">
           {loading && (
@@ -97,7 +98,6 @@ export function RandomImage() {
             crossOrigin="anonymous"
           />
         </div>
-
         <div className="flex gap-2 p-4">
           <Button className="flex-1" onClick={shuffle}>
             <Shuffle className="size-4" aria-hidden="true" />
@@ -113,7 +113,6 @@ export function RandomImage() {
           </Button>
         </div>
       </div>
-
       <p className="mt-4 text-center text-xs text-muted-foreground">Current source: {source.name}.</p>
     </div>
   )
