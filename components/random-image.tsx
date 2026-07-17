@@ -20,6 +20,19 @@ const SOURCES = [
     name: "Pexels",
     ext: "jpg",
     dynamic: true,
+    endpoint: "/api/random-photo",
+  },
+  {
+    name: "Unsplash",
+    ext: "jpg",
+    dynamic: true,
+    endpoint: "/api/random-unsplash",
+  },
+  {
+    name: "Pixabay",
+    ext: "jpg",
+    dynamic: true,
+    endpoint: "/api/random-pixabay",
   },
 ]
 
@@ -28,23 +41,25 @@ export function RandomImage() {
   const [sourceIndex, setSourceIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
-  const [pexelsUrl, setPexelsUrl] = useState("") // ← NEW: holds the URL once Pexels responds
+  const [dynamicUrl, setDynamicUrl] = useState("")
+  const [loadId, setLoadId] = useState(0)
 
   const source = SOURCES[sourceIndex]
-  const url = source.dynamic ? pexelsUrl : source.build!(seed) // ← CHANGED
+  const url = source.dynamic ? dynamicUrl : source.build!(seed)
 
-  const shuffle = useCallback(async () => { // ← CHANGED: now async
+  const shuffle = useCallback(async () => {
     setLoading(true)
+    setLoadId((id) => id + 1)
     const newIndex = Math.floor(Math.random() * SOURCES.length)
     const newSeed = Math.floor(Math.random() * 100000)
     setSourceIndex(newIndex)
     setSeed(newSeed)
 
-    if (SOURCES[newIndex].dynamic) {
-      // NEW: ask our own server route instead of building a URL directly
-      const res = await fetch("/api/random-photo")
+    const newSource = SOURCES[newIndex]
+    if (newSource.dynamic) {
+      const res = await fetch(newSource.endpoint!)
       const data = await res.json()
-      setPexelsUrl(data.url)
+      setDynamicUrl(data.url ?? "")
     }
   }, [])
 
@@ -90,11 +105,12 @@ export function RandomImage() {
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={url}
+            key={loadId}
             src={url || "/placeholder.svg"}
             alt="Random image"
             className="h-full w-full object-cover"
             onLoad={() => setLoading(false)}
+            onError={() => setLoading(false)}
             crossOrigin="anonymous"
           />
         </div>
