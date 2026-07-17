@@ -1,6 +1,6 @@
 "use client"
 import { useCallback, useEffect, useState } from "react"
-import { Download, Loader2, Shuffle } from "lucide-react"
+import { Download, Loader2, Maximize2, Minimize2, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const WIDTH = 1200
@@ -43,6 +43,7 @@ export function RandomImage() {
   const [downloading, setDownloading] = useState(false)
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [loadId, setLoadId] = useState(0)
+  const [fillFrame, setFillFrame] = useState(true)
 
   const source = SOURCES[sourceIndex]
   const url = source.dynamic ? dynamicUrl : source.build!(seed)
@@ -108,7 +109,7 @@ export function RandomImage() {
             key={loadId}
             src={url || "/placeholder.svg"}
             alt="Random image"
-            className="h-full w-full object-cover"
+            className={`h-full w-full ${fillFrame ? "object-cover" : "object-contain"}`}
             onLoad={() => setLoading(false)}
             onError={() => setLoading(false)}
             crossOrigin="anonymous"
@@ -118,6 +119,19 @@ export function RandomImage() {
           <Button className="flex-1" onClick={shuffle}>
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => setFillFrame((f) => !f)}
+            aria-label={fillFrame ? "Switch to fit (show full image)" : "Switch to fill (crop to frame)"}
+            title={fillFrame ? "Fit: show full image" : "Fill: crop to frame"}
+          >
+            {fillFrame ? (
+              <Minimize2 className="size-4" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-4" aria-hidden="true" />
+            )}
+            {fillFrame ? "Fit" : "Fill"}
           </Button>
           <Button variant="secondary" onClick={download} disabled={downloading || loading}>
             {downloading ? (
