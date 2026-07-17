@@ -36,37 +36,30 @@ const SOURCES = [
   },
 ]
 
-type UploadedImage = { id: number; url: string; name: string }
+type UploadedImage = { url: string; name: string }
 
 export function RandomImage() {
   const [seed, setSeed] = useState(1)
   const [sourceIndex, setSourceIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
   const [uploads, setUploads] = useState<UploadedImage[]>([])
-  const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
+  const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
-  const nextUploadId = useRef(0)
 
   useEffect(() => {
     uploadsRef.current = uploads
   }, [uploads])
 
-  // Revoke every uploaded object URL when the component unmounts.
-  useEffect(() => {
-    return () => {
-      uploadsRef.current.forEach((u) => URL.revokeObjectURL(u.url))
-    }
-  }, [])
-
   const source = SOURCES[sourceIndex]
-  const activeUpload = uploads.find((u) => u.id === activeUploadId)
+  const activeUpload = uploads.find((u) => u.url === activeUploadUrl)
   const url = activeUpload ? activeUpload.url : source.dynamic ? dynamicUrl : source.build!(seed)
-  const sourceName = activeUpload ? `Your upload: ${activeUpload.name}` : source.name
+  const sourceName = activeUpload ? `Community upload: ${activeUpload.name}` : source.name
 
   const shuffle = useCallback(async () => {
     setLoading(true)
@@ -76,7 +69,7 @@ export function RandomImage() {
     const pick = Math.floor(Math.random() * poolSize)
 
     if (pick < SOURCES.length) {
-      setActiveUploadId(null)
+      setActiveUploadUrl(null)
       const newSeed = Math.floor(Math.random() * 100000)
       setSourceIndex(pick)
       setSeed(newSeed)
@@ -88,23 +81,51 @@ export function RandomImage() {
         setDynamicUrl(data.url ?? "")
       }
     } else {
-      setActiveUploadId(currentUploads[pick - SOURCES.length].id)
+      setActiveUploadUrl(currentUploads[pick - SOURCES.length].url)
     }
   }, [])
 
+  // Load the shared gallery once on mount, then start shuffling.
   useEffect(() => {
-    shuffle()
+    let cancelled = false
+    fetch("/api/uploads")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return
+        const images: UploadedImage[] = data.images ?? []
+        uploadsRef.current = images
+        setUploads(images)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) shuffle()
+      })
+    return () => {
+      cancelled = true
+    }
   }, [shuffle])
 
-  const handleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ""
     if (!file) return
-    const id = nextUploadId.current++
-    setUploads((prev) => [...prev, { id, url: URL.createObjectURL(file), name: file.name }])
-    setActiveUploadId(id)
-    setLoading(true)
-    setLoadId((n) => n + 1)
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/upload", { method: "POST", body: formData })
+      if (!res.ok) throw new Error("Upload failed")
+      const data = await res.json()
+      const newImage: UploadedImage = { url: data.url, name: data.name ?? file.name }
+      setUploads((prev) => [...prev, newImage])
+      setActiveUploadUrl(newImage.url)
+      setLoading(true)
+      setLoadId((n) => n + 1)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setUploading(false)
+    }
   }, [])
 
   const download = useCallback(async () => {
@@ -170,10 +191,15 @@ export function RandomImage() {
             variant="secondary"
             size="icon"
             onClick={() => fileInputRef.current?.click()}
-            aria-label="Upload your own image"
-            title="Upload your own image"
+            disabled={uploading}
+            aria-label="Share an image with the gallery"
+            title="Share an image with the gallery"
           >
-            <Upload className="size-4" aria-hidden="true" />
+            {uploading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Upload className="size-4" aria-hidden="true" />
+            )}
           </Button>
           <Button
             variant="secondary"
