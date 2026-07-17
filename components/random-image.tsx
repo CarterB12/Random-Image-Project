@@ -1,6 +1,6 @@
 "use client"
-import { useCallback, useEffect, useState } from "react"
-import { Download, Loader2, Maximize2, Minimize2, Shuffle } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Download, Loader2, Maximize2, Minimize2, Shuffle, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const WIDTH = 1200
@@ -44,13 +44,26 @@ export function RandomImage() {
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const source = SOURCES[sourceIndex]
-  const url = source.dynamic ? dynamicUrl : source.build!(seed)
+  const url = uploadedUrl ?? (source.dynamic ? dynamicUrl : source.build!(seed))
+  const sourceName = uploadedUrl ? "Your upload" : source.name
+
+  // Revoke the previous object URL whenever it's replaced or the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (uploadedUrl) URL.revokeObjectURL(uploadedUrl)
+    }
+  }, [uploadedUrl])
 
   const shuffle = useCallback(async () => {
     setLoading(true)
     setLoadId((id) => id + 1)
+    setUploadedUrl(null)
+    setUploadedFile(null)
     const newIndex = Math.floor(Math.random() * SOURCES.length)
     const newSeed = Math.floor(Math.random() * 100000)
     setSourceIndex(newIndex)
@@ -68,6 +81,16 @@ export function RandomImage() {
     shuffle()
   }, [shuffle])
 
+  const handleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setLoading(true)
+    setLoadId((id) => id + 1)
+    setUploadedFile(file)
+    setUploadedUrl(URL.createObjectURL(file))
+  }, [])
+
   const download = useCallback(async () => {
     try {
       setDownloading(true)
@@ -76,7 +99,7 @@ export function RandomImage() {
       const objectUrl = URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = objectUrl
-      link.download = `random-image-${seed}.${source.ext}`
+      link.download = uploadedFile ? uploadedFile.name : `random-image-${seed}.${source.ext}`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -84,7 +107,7 @@ export function RandomImage() {
     } finally {
       setDownloading(false)
     }
-  }, [url, seed, source.ext])
+  }, [url, seed, source.ext, uploadedFile])
 
   return (
     <div className="w-full max-w-2xl">
@@ -120,8 +143,25 @@ export function RandomImage() {
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
           </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleUpload}
+          />
           <Button
             variant="secondary"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Upload your own image"
+            title="Upload your own image"
+          >
+            <Upload className="size-4" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="icon"
             onClick={() => setFillFrame((f) => !f)}
             aria-label={fillFrame ? "Switch to fit (show full image)" : "Switch to fill (crop to frame)"}
             title={fillFrame ? "Fit: show full image" : "Fill: crop to frame"}
@@ -131,19 +171,17 @@ export function RandomImage() {
             ) : (
               <Maximize2 className="size-4" aria-hidden="true" />
             )}
-            {fillFrame ? "Fit" : "Fill"}
           </Button>
-          <Button variant="secondary" onClick={download} disabled={downloading || loading}>
+          <Button variant="secondary" size="icon" onClick={download} disabled={downloading || loading} aria-label="Download" title="Download">
             {downloading ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
               <Download className="size-4" aria-hidden="true" />
             )}
-            Download
           </Button>
         </div>
       </div>
-      <p className="mt-4 text-center text-xs text-muted-foreground">Current source: {source.name}.</p>
+      <p className="mt-4 text-center text-xs text-muted-foreground">Current source: {sourceName}.</p>
     </div>
   )
 }
