@@ -1,7 +1,18 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Download, Heart, Loader2, Maximize2, Minimize2, Pause, Play, Shuffle, Upload } from "lucide-react"
+import {
+  Download,
+  Heart,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  Shuffle,
+  SlidersHorizontal,
+  Upload,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { readFavorites, writeFavorites } from "@/lib/favorites"
 
@@ -42,6 +53,21 @@ type UploadedImage = { url: string; name: string }
 
 const RECENT_HISTORY_SIZE = 8
 const MAX_SHUFFLE_ATTEMPTS = 6
+const COMMUNITY_NAME = "Community uploads"
+const ALL_CATEGORY_NAMES = [...SOURCES.map((s) => s.name), COMMUNITY_NAME]
+const FILTER_STORAGE_KEY = "enabled-sources-v1"
+
+function readEnabledSources(): string[] {
+  if (typeof window === "undefined") return ALL_CATEGORY_NAMES
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY)
+    if (!raw) return ALL_CATEGORY_NAMES
+    const parsed = JSON.parse(raw) as string[]
+    return parsed.length > 0 ? parsed : ALL_CATEGORY_NAMES
+  } catch {
+    return ALL_CATEGORY_NAMES
+  }
+}
 
 export function RandomImage() {
   const [seed, setSeed] = useState(1)
@@ -57,9 +83,12 @@ export function RandomImage() {
   const [favorites, setFavorites] = useState<ReturnType<typeof readFavorites>>([])
   const [uploads, setUploads] = useState<UploadedImage[]>([])
   const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
+  const [enabledSources, setEnabledSources] = useState<string[]>(ALL_CATEGORY_NAMES)
+  const [showFilters, setShowFilters] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
   const recentHistoryRef = useRef<string[]>([])
+  const enabledSourcesRef = useRef<string[]>(ALL_CATEGORY_NAMES)
 
   useEffect(() => {
     uploadsRef.current = uploads
@@ -67,6 +96,19 @@ export function RandomImage() {
 
   useEffect(() => {
     setFavorites(readFavorites())
+    setEnabledSources(readEnabledSources())
+  }, [])
+
+  useEffect(() => {
+    enabledSourcesRef.current = enabledSources
+  }, [enabledSources])
+
+  const toggleSourceFilter = useCallback((name: string) => {
+    setEnabledSources((prev) => {
+      const next = prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
   }, [])
 
   const source = SOURCES[sourceIndex]
@@ -78,8 +120,18 @@ export function RandomImage() {
   const shuffle = useCallback(async () => {
     setLoading(true)
     setLoadId((id) => id + 1)
-    const currentUploads = uploadsRef.current
-    const poolSize = SOURCES.length + currentUploads.length
+    const enabled = enabledSourcesRef.current
+    const activeSourceIndices = SOURCES.map((_, i) => i).filter((i) => enabled.includes(SOURCES[i].name))
+    const includeCommunity = enabled.includes(COMMUNITY_NAME)
+    const activeUploads = includeCommunity ? uploadsRef.current : []
+
+    // If nothing is actually selectable (e.g. every source unchecked, or only
+    // an empty community pool left checked), fall back to everything rather
+    // than leaving the app with nothing to shuffle.
+    const nothingSelectable = activeSourceIndices.length === 0 && activeUploads.length === 0
+    const effectiveSourceIndices = nothingSelectable ? SOURCES.map((_, i) => i) : activeSourceIndices
+    const currentUploads = nothingSelectable ? uploadsRef.current : activeUploads
+    const poolSize = effectiveSourceIndices.length + currentUploads.length
 
     let candidateIsUpload = false
     let candidateSourceIndex = 0
@@ -90,8 +142,9 @@ export function RandomImage() {
     for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
       const pick = Math.floor(Math.random() * poolSize)
 
-      if (pick < SOURCES.length) {
-        const candidateSource = SOURCES[pick]
+      if (pick < effectiveSourceIndices.length) {
+        const sourceIdx = effectiveSourceIndices[pick]
+        const candidateSource = SOURCES[sourceIdx]
         const newSeed = Math.floor(Math.random() * 100000)
         let url: string
         let creditName = ""
@@ -109,13 +162,13 @@ export function RandomImage() {
         }
 
         candidateIsUpload = false
-        candidateSourceIndex = pick
+        candidateSourceIndex = sourceIdx
         candidateSeed = newSeed
         candidateUrl = url
         candidateCredit = creditName
         break
       } else {
-        const candidate = currentUploads[pick - SOURCES.length]
+        const candidate = currentUploads[pick - effectiveSourceIndices.length]
 
         if (recentHistoryRef.current.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
           continue
@@ -260,11 +313,12 @@ export function RandomImage() {
             crossOrigin="anonymous"
           />
         </div>
-        <div className="flex gap-2 p-4">
-          <Button className="flex-1" onClick={shuffle}>
+        <div className="flex flex-col gap-2 p-4">
+          <Button onClick={shuffle}>
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
           </Button>
+          <div className="flex flex-wrap justify-center gap-2">
           <Button
             variant="secondary"
             size="icon"
@@ -331,8 +385,36 @@ export function RandomImage() {
               aria-hidden="true"
             />
           </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => setShowFilters((s) => !s)}
+            aria-label="Filter sources"
+            title="Filter sources"
+          >
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+          </Button>
+          </div>
         </div>
       </div>
+      {showFilters && (
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <p className="mb-3 text-sm font-medium">Sources to include</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {ALL_CATEGORY_NAMES.map((name) => (
+              <label key={name} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={enabledSources.includes(name)}
+                  onChange={() => toggleSourceFilter(name)}
+                  className="size-4 rounded border-border accent-foreground"
+                />
+                {name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Current source: {sourceName}.{credit && ` Photo by ${credit}.`}
       </p>
