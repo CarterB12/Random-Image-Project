@@ -1,6 +1,6 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Download, Loader2, Maximize2, Minimize2, Shuffle, Upload } from "lucide-react"
+import { Download, Loader2, Maximize2, Minimize2, Pause, Play, Shuffle, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const WIDTH = 1200
@@ -48,8 +48,10 @@ export function RandomImage() {
   const [downloading, setDownloading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dynamicUrl, setDynamicUrl] = useState("")
+  const [credit, setCredit] = useState("")
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
+  const [slideshow, setSlideshow] = useState(false)
   const [uploads, setUploads] = useState<UploadedImage[]>([])
   const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -75,6 +77,7 @@ export function RandomImage() {
     let candidateSourceIndex = 0
     let candidateSeed = 0
     let candidateUrl = ""
+    let candidateCredit = ""
 
     for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
       const pick = Math.floor(Math.random() * poolSize)
@@ -83,10 +86,12 @@ export function RandomImage() {
         const candidateSource = SOURCES[pick]
         const newSeed = Math.floor(Math.random() * 100000)
         let url: string
+        let creditName = ""
         if (candidateSource.dynamic) {
           const res = await fetch(candidateSource.endpoint!)
           const data = await res.json()
           url = data.url ?? ""
+          creditName = data.credit ?? ""
         } else {
           url = candidateSource.build!(newSeed)
         }
@@ -99,6 +104,7 @@ export function RandomImage() {
         candidateSourceIndex = pick
         candidateSeed = newSeed
         candidateUrl = url
+        candidateCredit = creditName
         break
       } else {
         const candidate = currentUploads[pick - SOURCES.length]
@@ -115,6 +121,7 @@ export function RandomImage() {
 
     if (candidateIsUpload) {
       setActiveUploadUrl(candidateUrl)
+      setCredit("")
     } else {
       setActiveUploadUrl(null)
       setSourceIndex(candidateSourceIndex)
@@ -122,6 +129,7 @@ export function RandomImage() {
       if (SOURCES[candidateSourceIndex].dynamic) {
         setDynamicUrl(candidateUrl)
       }
+      setCredit(candidateCredit)
     }
 
     if (candidateUrl) {
@@ -148,6 +156,12 @@ export function RandomImage() {
       cancelled = true
     }
   }, [shuffle])
+
+  useEffect(() => {
+    if (!slideshow) return
+    const interval = setInterval(shuffle, 4000)
+    return () => clearInterval(interval)
+  }, [slideshow, shuffle])
 
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -224,6 +238,19 @@ export function RandomImage() {
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
           </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => setSlideshow((s) => !s)}
+            aria-label={slideshow ? "Pause slideshow" : "Start slideshow"}
+            title={slideshow ? "Pause slideshow" : "Start slideshow"}
+          >
+            {slideshow ? (
+              <Pause className="size-4" aria-hidden="true" />
+            ) : (
+              <Play className="size-4" aria-hidden="true" />
+            )}
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -267,7 +294,9 @@ export function RandomImage() {
           </Button>
         </div>
       </div>
-      <p className="mt-4 text-center text-xs text-muted-foreground">Current source: {sourceName}.</p>
+      <p className="mt-4 text-center text-xs text-muted-foreground">
+        Current source: {sourceName}.{credit && ` Photo by ${credit}.`}
+      </p>
     </div>
   )
 }

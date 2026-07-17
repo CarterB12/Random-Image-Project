@@ -10,6 +10,12 @@ export const metadata: Metadata = {
   title: 'Random Image Generator',
   description: 'Discover a fresh random photo with a single click.',
   generator: 'v0.app',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Random Image',
+  },
   icons: {
     icon: [
       {
