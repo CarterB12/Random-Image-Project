@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server"
 
 export async function GET() {
-  const page = Math.floor(Math.random() * 20) + 1
+  // Pixabay caps results at 500 hits regardless of query, so with per_page=100
+  // only pages 1-5 are ever valid — higher pages return a 400 error.
+  const page = Math.floor(Math.random() * 5) + 1
 
   const res = await fetch(
-    `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&image_type=photo&per_page=200&page=${page}`,
+    `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&image_type=photo&per_page=100&page=${page}`,
   )
 
   if (!res.ok) {
