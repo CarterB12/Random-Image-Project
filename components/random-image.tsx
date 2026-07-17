@@ -1,7 +1,9 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Download, Loader2, Maximize2, Minimize2, Pause, Play, Shuffle, Upload } from "lucide-react"
+import Link from "next/link"
+import { Download, Heart, Loader2, Maximize2, Minimize2, Pause, Play, Shuffle, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { readFavorites, writeFavorites } from "@/lib/favorites"
 
 const WIDTH = 1200
 const HEIGHT = 800
@@ -52,6 +54,7 @@ export function RandomImage() {
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
   const [slideshow, setSlideshow] = useState(false)
+  const [favorites, setFavorites] = useState<ReturnType<typeof readFavorites>>([])
   const [uploads, setUploads] = useState<UploadedImage[]>([])
   const [activeUploadUrl, setActiveUploadUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -62,10 +65,15 @@ export function RandomImage() {
     uploadsRef.current = uploads
   }, [uploads])
 
+  useEffect(() => {
+    setFavorites(readFavorites())
+  }, [])
+
   const source = SOURCES[sourceIndex]
   const activeUpload = uploads.find((u) => u.url === activeUploadUrl)
   const url = activeUpload ? activeUpload.url : source.dynamic ? dynamicUrl : source.build!(seed)
   const sourceName = activeUpload ? `Community upload: ${activeUpload.name}` : source.name
+  const isFavorited = favorites.some((f) => f.url === url)
 
   const shuffle = useCallback(async () => {
     setLoading(true)
@@ -204,6 +212,25 @@ export function RandomImage() {
     }
   }, [url, seed, source.ext, activeUpload])
 
+  const toggleFavorite = useCallback(() => {
+    setFavorites((prev) => {
+      const next = prev.some((f) => f.url === url)
+        ? prev.filter((f) => f.url !== url)
+        : [
+            ...prev,
+            {
+              url,
+              name: activeUpload ? activeUpload.name : `random-image-${seed}.${source.ext}`,
+              sourceName,
+              credit: credit || undefined,
+              savedAt: Date.now(),
+            },
+          ]
+      writeFavorites(next)
+      return next
+    })
+  }, [url, seed, source.ext, activeUpload, sourceName, credit])
+
   return (
     <div className="w-full max-w-2xl">
       <div className="mb-6 text-center">
@@ -292,10 +319,27 @@ export function RandomImage() {
               <Download className="size-4" aria-hidden="true" />
             )}
           </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={toggleFavorite}
+            aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
+            title={isFavorited ? "Remove from favorites" : "Save to favorites"}
+          >
+            <Heart
+              className={`size-4 ${isFavorited ? "fill-current text-destructive" : ""}`}
+              aria-hidden="true"
+            />
+          </Button>
         </div>
       </div>
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Current source: {sourceName}.{credit && ` Photo by ${credit}.`}
+      </p>
+      <p className="mt-1 text-center text-xs">
+        <Link href="/favorites" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          View favorites{favorites.length > 0 ? ` (${favorites.length})` : ""}
+        </Link>
       </p>
     </div>
   )
