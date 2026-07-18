@@ -139,7 +139,7 @@ export function RandomImage() {
   const sourceName = searchQuery
     ? `Search "${searchQuery}" via ${searchProvider}`
     : activeUpload
-      ? `Community upload: ${activeUpload.name}`
+      ? `Community upload: ${activeUpload.name.replace(/\.[^.]+$/, "")}`
       : source.name
   const displayCredit = credit || activeUpload?.uploader || ""
   const isFavorited = favorites.some((f) => f.url === url)
