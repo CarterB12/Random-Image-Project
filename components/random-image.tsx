@@ -191,6 +191,10 @@ export function RandomImage() {
     const effectiveSourceIndices = nothingSelectable ? SOURCES.map((_, i) => i) : activeSourceIndices
     const currentUploads = nothingSelectable ? uploadsRef.current : activeUploads
     const poolSize = effectiveSourceIndices.length + currentUploads.length
+    // Cap how much of the pool counts as "recently shown" so a small pool
+    // (e.g. few community uploads) doesn't get entirely blocked out.
+    const effectiveHistorySize = Math.max(1, Math.min(RECENT_HISTORY_SIZE, Math.floor(poolSize / 2)))
+    const recentHistory = recentHistoryRef.current.slice(-effectiveHistorySize)
 
     let candidateIsUpload = false
     let candidateSourceIndex = 0
@@ -216,7 +220,7 @@ export function RandomImage() {
           url = candidateSource.build!(newSeed)
         }
 
-        if (url && recentHistoryRef.current.includes(url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+        if (url && recentHistory.includes(url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
           continue
         }
 
@@ -229,7 +233,7 @@ export function RandomImage() {
       } else {
         const candidate = currentUploads[pick - effectiveSourceIndices.length]
 
-        if (recentHistoryRef.current.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+        if (recentHistory.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
           continue
         }
 
@@ -668,9 +672,6 @@ export function RandomImage() {
       )}
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Current source: {sourceName}.{displayCredit && ` Photo by ${displayCredit}.`}
-      </p>
-      <p className="mt-1 text-center text-xs text-muted-foreground">
-        Swipe or press ← to skip, → to like
       </p>
       <p className="mt-1 text-center text-xs">
         <Link href="/favorites" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
