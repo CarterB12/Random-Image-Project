@@ -62,6 +62,9 @@ const SEARCH_SOURCES = [
 
 const RECENT_HISTORY_SIZE = 16
 const MAX_SHUFFLE_ATTEMPTS = 6
+const SWIPE_THRESHOLD = 100
+const SWIPE_EXIT_DISTANCE = 600
+const SWIPE_EXIT_DURATION = 220
 const COMMUNITY_NAME = "Community uploads"
 const ALL_CATEGORY_NAMES = [...SOURCES.map((s) => s.name), COMMUNITY_NAME]
 const FILTER_STORAGE_KEY = "enabled-sources-v1"
@@ -102,11 +105,15 @@ export function RandomImage() {
   const [searchInput, setSearchInput] = useState("")
   const [searchProvider, setSearchProvider] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+  const [dragX, setDragX] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
   const recentHistoryRef = useRef<string[]>([])
   const enabledSourcesRef = useRef<string[]>(ALL_CATEGORY_NAMES)
   const searchQueryRef = useRef("")
+  const dragStartRef = useRef({ x: 0, active: false })
 
   useEffect(() => {
     uploadsRef.current = uploads
@@ -298,6 +305,20 @@ export function RandomImage() {
     return () => clearInterval(interval)
   }, [slideshow, shuffle])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
+      if (editingFile) return
+      e.preventDefault()
+      shuffle()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [shuffle, editingFile])
+
   const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ""
@@ -387,6 +408,76 @@ export function RandomImage() {
     })
   }, [url, fileName, sourceName, displayCredit])
 
+  const addFavoriteCurrent = useCallback(() => {
+    setFavorites((prev) => {
+      if (prev.some((f) => f.url === url)) return prev
+      const next = [
+        ...prev,
+        { url, name: fileName, sourceName, credit: displayCredit || undefined, savedAt: Date.now() },
+      ]
+      writeFavorites(next)
+      return next
+    })
+  }, [url, fileName, sourceName, displayCredit])
+
+  const triggerSwipe = useCallback(
+    (direction: "left" | "right") => {
+      if (exitDirection || loading) return
+      if (direction === "right") addFavoriteCurrent()
+      setIsDragging(false)
+      setExitDirection(direction)
+      setDragX(direction === "right" ? SWIPE_EXIT_DISTANCE : -SWIPE_EXIT_DISTANCE)
+      window.setTimeout(() => {
+        shuffle()
+        setExitDirection(null)
+        setDragX(0)
+      }, SWIPE_EXIT_DURATION)
+    },
+    [exitDirection, loading, addFavoriteCurrent, shuffle],
+  )
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (exitDirection || loading) return
+      dragStartRef.current = { x: e.clientX, active: true }
+      setIsDragging(true)
+      e.currentTarget.setPointerCapture(e.pointerId)
+    },
+    [exitDirection, loading],
+  )
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current.active) return
+    setDragX(e.clientX - dragStartRef.current.x)
+  }, [])
+
+  const endDrag = useCallback(() => {
+    if (!dragStartRef.current.active) return
+    dragStartRef.current.active = false
+    setIsDragging(false)
+    setDragX((current) => {
+      if (Math.abs(current) > SWIPE_THRESHOLD) {
+        triggerSwipe(current > 0 ? "right" : "left")
+        return current
+      }
+      return 0
+    })
+  }, [triggerSwipe])
+
+  useEffect(() => {
+    const handleArrowKeys = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
+      if (editingFile) return
+      e.preventDefault()
+      triggerSwipe(e.key === "ArrowRight" ? "right" : "left")
+    }
+    window.addEventListener("keydown", handleArrowKeys)
+    return () => window.removeEventListener("keydown", handleArrowKeys)
+  }, [triggerSwipe, editingFile])
+
   return (
     <div className="w-full max-w-2xl">
       <div className="mb-6 text-center">
@@ -398,11 +489,38 @@ export function RandomImage() {
         </p>
       </div>
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="relative flex aspect-[3/2] items-center justify-center bg-muted">
+        <div
+          className="relative flex aspect-[3/2] touch-none select-none items-center justify-center overflow-hidden bg-muted"
+          style={{
+            cursor: isDragging ? "grabbing" : "grab",
+            transform: `translateX(${dragX}px) rotate(${dragX / 20}deg)`,
+            transition: isDragging ? "none" : "transform 220ms ease",
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-muted">
               <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
               <span className="sr-only">Loading image</span>
+            </div>
+          )}
+          {(dragX > 20 || exitDirection === "right") && (
+            <div
+              className="absolute right-4 top-4 z-20 rotate-6 rounded-lg border-2 border-emerald-500 px-3 py-1 text-sm font-bold text-emerald-500"
+              style={{ opacity: exitDirection ? 1 : Math.min(dragX / SWIPE_THRESHOLD, 1) }}
+            >
+              LIKE
+            </div>
+          )}
+          {(dragX < -20 || exitDirection === "left") && (
+            <div
+              className="absolute left-4 top-4 z-20 -rotate-6 rounded-lg border-2 border-rose-500 px-3 py-1 text-sm font-bold text-rose-500"
+              style={{ opacity: exitDirection ? 1 : Math.min(-dragX / SWIPE_THRESHOLD, 1) }}
+            >
+              SKIP
             </div>
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -414,6 +532,7 @@ export function RandomImage() {
             onLoad={() => setLoading(false)}
             onError={() => setLoading(false)}
             crossOrigin="anonymous"
+            draggable={false}
           />
         </div>
         <div className="flex flex-col gap-2 p-4">
@@ -549,6 +668,9 @@ export function RandomImage() {
       )}
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Current source: {sourceName}.{displayCredit && ` Photo by ${displayCredit}.`}
+      </p>
+      <p className="mt-1 text-center text-xs text-muted-foreground">
+        Swipe or press ← to skip, → to like
       </p>
       <p className="mt-1 text-center text-xs">
         <Link href="/favorites" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
