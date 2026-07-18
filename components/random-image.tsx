@@ -554,6 +554,10 @@ export function RandomImage() {
         <Link href="/favorites" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
           View favorites{favorites.length > 0 ? ` (${favorites.length})` : ""}
         </Link>
+        <span className="mx-2 text-muted-foreground">·</span>
+        <Link href="/gallery" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          Community gallery
+        </Link>
       </p>
       {editingFile && (
         <ImageEditorDialog

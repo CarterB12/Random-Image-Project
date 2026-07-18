@@ -8,7 +8,7 @@ export async function GET() {
   return NextResponse.json({
     images: blobs.map((b) => {
       const { name, uploader } = parseUploadPathname(b.pathname)
-      return { url: b.url, name, uploader: uploader || undefined }
+      return { url: b.url, name, uploader: uploader || undefined, uploadedAt: b.uploadedAt }
     }),
   })
 }
