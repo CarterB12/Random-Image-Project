@@ -16,12 +16,13 @@ type Props = {
   queuePosition?: number
   queueTotal?: number
   onCancel: () => void
-  onConfirm: (blob: Blob, fileName: string, uploaderName: string) => void
+  onConfirm: (blob: Blob, fileName: string, uploaderName: string, tags: string) => void
 }
 
 export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, onConfirm }: Props) {
   const [imageUrl] = useState(() => URL.createObjectURL(file))
   const [uploaderName, setUploaderName] = useState(() => window.localStorage.getItem(NAME_STORAGE_KEY) ?? "")
+  const [tagsInput, setTagsInput] = useState("")
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const [rotation, setRotation] = useState(0)
   const [crop, setCrop] = useState<CropRect>({ x: 0, y: 0, w: 0, h: 0 })
@@ -164,7 +165,7 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
       const trimmedName = uploaderName.trim()
       window.localStorage.setItem(NAME_STORAGE_KEY, trimmedName)
       URL.revokeObjectURL(imageUrl)
-      onConfirm(blob, `${baseName}.jpg`, trimmedName)
+      onConfirm(blob, `${baseName}.jpg`, trimmedName, tagsInput)
     } finally {
       setSubmitting(false)
     }
@@ -178,6 +179,7 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
     imageUrl,
     file.name,
     uploaderName,
+    tagsInput,
     onConfirm,
   ])
 
@@ -193,6 +195,14 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
           onChange={(e) => setUploaderName(e.target.value)}
           placeholder="Your name (shown as credit)"
           maxLength={40}
+          className="mb-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring"
+        />
+        <input
+          type="text"
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+          placeholder="Tags (comma separated, e.g. cats, sunset)"
+          maxLength={120}
           className="mb-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring"
         />
         <div

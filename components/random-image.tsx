@@ -3,15 +3,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
   Download,
+  Expand,
   Heart,
   Loader2,
-  Maximize2,
-  Minimize2,
   Pause,
   Play,
   Search,
+  Shrink,
   Shuffle,
   SlidersHorizontal,
+  Undo2,
   Upload,
   X,
 } from "lucide-react"
@@ -52,7 +53,7 @@ const SOURCES = [
   },
 ]
 
-type UploadedImage = { url: string; name: string; uploader?: string }
+type UploadedImage = { url: string; name: string; uploader?: string; tags?: string[] }
 
 const SEARCH_SOURCES = [
   { name: "Pexels", endpoint: "/api/search-pexels" },
@@ -95,6 +96,8 @@ export function RandomImage() {
   const [credit, setCredit] = useState("")
   const [loadId, setLoadId] = useState(0)
   const [fillFrame, setFillFrame] = useState(true)
+  const frameRef = useRef<HTMLDivElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
   const [slideshow, setSlideshow] = useState(false)
   const [favorites, setFavorites] = useState<ReturnType<typeof readFavorites>>([])
   const [uploads, setUploads] = useState<UploadedImage[]>([])
@@ -108,6 +111,18 @@ export function RandomImage() {
   const [dragX, setDragX] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [lastSwipe, setLastSwipe] = useState<{
+    snapshot: {
+      seed: number
+      sourceIndex: number
+      activeUploadUrl: string | null
+      dynamicUrl: string
+      credit: string
+      searchProvider: string
+    }
+    likedUrl: string | null
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadsRef = useRef<UploadedImage[]>([])
   const recentHistoryRef = useRef<string[]>([])
@@ -131,6 +146,20 @@ export function RandomImage() {
   useEffect(() => {
     searchQueryRef.current = searchQuery
   }, [searchQuery])
+
+  const computeFit = useCallback(() => {
+    const frame = frameRef.current
+    const img = imgRef.current
+    if (!frame || !img || !img.naturalWidth || !img.naturalHeight) return
+    const frameAspect = frame.clientWidth / frame.clientHeight
+    const imageAspect = img.naturalWidth / img.naturalHeight
+    const mismatch = Math.max(frameAspect, imageAspect) / Math.min(frameAspect, imageAspect)
+    setFillFrame(mismatch <= 1.35)
+  }, [])
+
+  useEffect(() => {
+    computeFit()
+  }, [computeFit, isFullscreen])
 
   const toggleSourceFilter = useCallback((name: string) => {
     setEnabledSources((prev) => {
@@ -269,6 +298,7 @@ export function RandomImage() {
       searchQueryRef.current = trimmed
       setSearchQuery(trimmed)
       recentHistoryRef.current = []
+      setLastSwipe(null)
       shuffle()
     },
     [searchInput, shuffle],
@@ -280,6 +310,7 @@ export function RandomImage() {
     setSearchInput("")
     setShowSearch(false)
     recentHistoryRef.current = []
+    setLastSwipe(null)
     shuffle()
   }, [shuffle])
 
@@ -305,7 +336,10 @@ export function RandomImage() {
 
   useEffect(() => {
     if (!slideshow) return
-    const interval = setInterval(shuffle, 4000)
+    const interval = setInterval(() => {
+      setLastSwipe(null)
+      shuffle()
+    }, 4000)
     return () => clearInterval(interval)
   }, [slideshow, shuffle])
 
@@ -317,6 +351,7 @@ export function RandomImage() {
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
       if (editingFile) return
       e.preventDefault()
+      setLastSwipe(null)
       shuffle()
     }
     window.addEventListener("keydown", handleKeyDown)
@@ -347,19 +382,26 @@ export function RandomImage() {
     })
   }, [])
 
-  const uploadEditedImage = useCallback(async (blob: Blob, fileName: string, uploaderName: string) => {
+  const uploadEditedImage = useCallback(async (blob: Blob, fileName: string, uploaderName: string, tags: string) => {
     setUploading(true)
     try {
       const formData = new FormData()
       formData.append("file", blob, fileName)
       formData.append("uploader", uploaderName)
+      formData.append("tags", tags)
       const res = await fetch("/api/upload", { method: "POST", body: formData })
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
-      const newImage: UploadedImage = { url: data.url, name: data.name ?? fileName, uploader: data.uploader }
+      const newImage: UploadedImage = {
+        url: data.url,
+        name: data.name ?? fileName,
+        uploader: data.uploader,
+        tags: data.tags,
+      }
       setUploads((prev) => [...prev, newImage])
       setActiveUploadUrl(newImage.url)
       setCredit("")
+      setLastSwipe(null)
       setLoading(true)
       setLoadId((n) => n + 1)
     } catch (err) {
@@ -427,6 +469,10 @@ export function RandomImage() {
   const triggerSwipe = useCallback(
     (direction: "left" | "right") => {
       if (exitDirection || loading) return
+      setLastSwipe({
+        snapshot: { seed, sourceIndex, activeUploadUrl, dynamicUrl, credit, searchProvider },
+        likedUrl: direction === "right" ? url : null,
+      })
       if (direction === "right") addFavoriteCurrent()
       setIsDragging(false)
       setExitDirection(direction)
@@ -437,8 +483,41 @@ export function RandomImage() {
         setDragX(0)
       }, SWIPE_EXIT_DURATION)
     },
-    [exitDirection, loading, addFavoriteCurrent, shuffle],
+    [
+      exitDirection,
+      loading,
+      addFavoriteCurrent,
+      shuffle,
+      seed,
+      sourceIndex,
+      activeUploadUrl,
+      dynamicUrl,
+      credit,
+      searchProvider,
+      url,
+    ],
   )
+
+  const undoSwipe = useCallback(() => {
+    if (!lastSwipe) return
+    const { snapshot, likedUrl } = lastSwipe
+    setSeed(snapshot.seed)
+    setSourceIndex(snapshot.sourceIndex)
+    setActiveUploadUrl(snapshot.activeUploadUrl)
+    setDynamicUrl(snapshot.dynamicUrl)
+    setCredit(snapshot.credit)
+    setSearchProvider(snapshot.searchProvider)
+    if (likedUrl) {
+      setFavorites((prev) => {
+        const next = prev.filter((f) => f.url !== likedUrl)
+        writeFavorites(next)
+        return next
+      })
+    }
+    setLoading(true)
+    setLoadId((n) => n + 1)
+    setLastSwipe(null)
+  }, [lastSwipe])
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -482,6 +561,19 @@ export function RandomImage() {
     return () => window.removeEventListener("keydown", handleArrowKeys)
   }, [triggerSwipe, editingFile])
 
+  useEffect(() => {
+    if (!isFullscreen) return
+    document.body.style.overflow = "hidden"
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false)
+    }
+    window.addEventListener("keydown", handleEscape)
+    return () => {
+      document.body.style.overflow = ""
+      window.removeEventListener("keydown", handleEscape)
+    }
+  }, [isFullscreen])
+
   return (
     <div className="w-full max-w-2xl">
       <div className="mb-6 text-center">
@@ -492,9 +584,18 @@ export function RandomImage() {
           Shuffle for a fresh image and download your favorite.
         </p>
       </div>
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div
+        className={
+          isFullscreen
+            ? "fixed inset-0 z-50 bg-black"
+            : "overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+        }
+      >
         <div
-          className="relative flex aspect-[3/2] touch-none select-none items-center justify-center overflow-hidden bg-muted"
+          ref={frameRef}
+          className={`relative flex touch-none select-none items-center justify-center overflow-hidden ${
+            isFullscreen ? "h-full w-full" : "aspect-[3/2] bg-muted"
+          }`}
           style={{
             cursor: isDragging ? "grabbing" : "grab",
             transform: `translateX(${dragX}px) rotate(${dragX / 20}deg)`,
@@ -530,21 +631,62 @@ export function RandomImage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={loadId}
+            ref={imgRef}
             src={url || "/placeholder.svg"}
             alt="Random image"
             className={`h-full w-full ${fillFrame ? "object-cover" : "object-contain"}`}
-            onLoad={() => setLoading(false)}
+            onLoad={() => {
+              setLoading(false)
+              computeFit()
+            }}
             onError={() => setLoading(false)}
             crossOrigin="anonymous"
             draggable={false}
           />
+          {isFullscreen && (
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={() => setIsFullscreen(false)}
+              aria-label="Exit fullscreen"
+              title="Exit fullscreen"
+              className="absolute right-4 top-4 z-20"
+            >
+              <Shrink className="size-4" aria-hidden="true" />
+            </Button>
+          )}
         </div>
+        {!isFullscreen && (
         <div className="flex flex-col gap-2 p-4">
-          <Button onClick={shuffle}>
+          <Button
+            onClick={() => {
+              setLastSwipe(null)
+              shuffle()
+            }}
+          >
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
           </Button>
           <div className="flex flex-wrap justify-center gap-2">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={undoSwipe}
+            disabled={!lastSwipe}
+            aria-label="Undo last swipe"
+            title="Undo last swipe"
+          >
+            <Undo2 className="size-4" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => setIsFullscreen(true)}
+            aria-label="View fullscreen"
+            title="View fullscreen"
+          >
+            <Expand className="size-4" aria-hidden="true" />
+          </Button>
           <Button
             variant="secondary"
             size="icon"
@@ -578,19 +720,6 @@ export function RandomImage() {
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
               <Upload className="size-4" aria-hidden="true" />
-            )}
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={() => setFillFrame((f) => !f)}
-            aria-label={fillFrame ? "Switch to fit (show full image)" : "Switch to fill (crop to frame)"}
-            title={fillFrame ? "Fit: show full image" : "Fill: crop to frame"}
-          >
-            {fillFrame ? (
-              <Minimize2 className="size-4" aria-hidden="true" />
-            ) : (
-              <Maximize2 className="size-4" aria-hidden="true" />
             )}
           </Button>
           <Button variant="secondary" size="icon" onClick={download} disabled={downloading || loading} aria-label="Download" title="Download">
@@ -632,6 +761,7 @@ export function RandomImage() {
           </Button>
           </div>
         </div>
+        )}
       </div>
       {showSearch && (
         <form onSubmit={performSearch} className="mt-4 flex gap-2">
@@ -689,8 +819,8 @@ export function RandomImage() {
           queuePosition={queueTotal - fileQueue.length}
           queueTotal={queueTotal}
           onCancel={advanceQueue}
-          onConfirm={(blob, name, uploaderName) => {
-            uploadEditedImage(blob, name, uploaderName)
+          onConfirm={(blob, name, uploaderName, tags) => {
+            uploadEditedImage(blob, name, uploaderName, tags)
             advanceQueue()
           }}
         />

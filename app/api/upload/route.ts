@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { put } from "@vercel/blob"
+import { sanitizeTags } from "@/lib/uploads"
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
 
@@ -26,10 +27,17 @@ export async function POST(request: Request) {
     .slice(0, 40)
   const safeUploader = uploader || "Anonymous"
 
+  const tagsRaw = formData.get("tags")
+  const tags = sanitizeTags(typeof tagsRaw === "string" ? tagsRaw : "")
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-  const blob = await put(`uploads/${Date.now()}/${safeUploader}/${safeName}`, file, {
+  const pathname =
+    tags.length > 0
+      ? `uploads/${Date.now()}/${safeUploader}/${tags.join(",")}/${safeName}`
+      : `uploads/${Date.now()}/${safeUploader}/${safeName}`
+  const blob = await put(pathname, file, {
     access: "public",
   })
 
-  return NextResponse.json({ url: blob.url, name: safeName, uploader: safeUploader })
+  return NextResponse.json({ url: blob.url, name: safeName, uploader: safeUploader, tags })
 }

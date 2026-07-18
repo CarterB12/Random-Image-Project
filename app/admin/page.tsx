@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-type UploadedImage = { url: string; name: string; uploader?: string; uploadedAt: string }
+type UploadedImage = { url: string; name: string; uploader?: string; tags?: string[]; uploadedAt: string }
 
 const STORAGE_KEY = "admin-passcode"
 
@@ -124,6 +124,9 @@ export default function AdminPage() {
                   <span className="min-w-0 truncate text-xs text-muted-foreground" title={img.name}>
                     {img.name}
                     {img.uploader && <span className="block truncate">by {img.uploader}</span>}
+                    {img.tags && img.tags.length > 0 && (
+                      <span className="block truncate text-muted-foreground/70">{img.tags.join(", ")}</span>
+                    )}
                   </span>
                   <Button
                     variant="destructive"

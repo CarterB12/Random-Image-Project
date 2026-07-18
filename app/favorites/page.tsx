@@ -1,14 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Download, Trash2 } from "lucide-react"
+import { ArrowLeft, Archive, Download, Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { readFavorites, writeFavorites, type FavoriteImage } from "@/lib/favorites"
+import { createZip } from "@/lib/zip"
 
 export default function FavoritesPage() {
   const [favorites, setFavorites] = useState<FavoriteImage[]>([])
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null)
+  const [downloadingAll, setDownloadingAll] = useState(false)
 
   useEffect(() => {
     setFavorites(readFavorites())
@@ -40,6 +42,40 @@ export default function FavoritesPage() {
     }
   }
 
+  const downloadAll = useCallback(async () => {
+    if (favorites.length === 0) return
+    setDownloadingAll(true)
+    try {
+      const usedNames = new Set<string>()
+      const entries = await Promise.all(
+        favorites.map(async (favorite, i) => {
+          const res = await fetch(favorite.url)
+          const buf = await res.arrayBuffer()
+          let name = favorite.name || `image-${i + 1}`
+          if (usedNames.has(name)) {
+            const dot = name.lastIndexOf(".")
+            const base = dot > 0 ? name.slice(0, dot) : name
+            const ext = dot > 0 ? name.slice(dot) : ""
+            name = `${base}-${i + 1}${ext}`
+          }
+          usedNames.add(name)
+          return { name, data: new Uint8Array(buf) }
+        }),
+      )
+      const zipBlob = createZip(entries)
+      const objectUrl = URL.createObjectURL(zipBlob)
+      const link = document.createElement("a")
+      link.href = objectUrl
+      link.download = "favorites.zip"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } finally {
+      setDownloadingAll(false)
+    }
+  }, [favorites])
+
   return (
     <main className="min-h-screen bg-background px-4 py-10 text-foreground">
       <div className="mx-auto max-w-4xl">
@@ -48,7 +84,17 @@ export default function FavoritesPage() {
             <ArrowLeft className="size-5" aria-hidden="true" />
             <span className="sr-only">Back</span>
           </Link>
-          <h1 className="text-2xl font-semibold">Favorites ({favorites.length})</h1>
+          <h1 className="flex-1 text-2xl font-semibold">Favorites ({favorites.length})</h1>
+          {favorites.length > 0 && (
+            <Button variant="secondary" size="sm" onClick={downloadAll} disabled={downloadingAll}>
+              {downloadingAll ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Archive className="size-4" aria-hidden="true" />
+              )}
+              Download all
+            </Button>
+          )}
         </div>
         {favorites.length === 0 ? (
           <p className="text-muted-foreground">

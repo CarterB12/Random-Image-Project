@@ -1,12 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Download, Heart, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { readFavorites, writeFavorites } from "@/lib/favorites"
 
-type GalleryImage = { url: string; name: string; uploader?: string; uploadedAt: string }
+type GalleryImage = { url: string; name: string; uploader?: string; tags?: string[]; uploadedAt: string }
 
 export default function GalleryPage() {
   const [images, setImages] = useState<GalleryImage[]>([])
@@ -14,6 +14,7 @@ export default function GalleryPage() {
   const [selected, setSelected] = useState<GalleryImage | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [favorites, setFavorites] = useState<ReturnType<typeof readFavorites>>([])
+  const [activeTags, setActiveTags] = useState<string[]>([])
 
   useEffect(() => {
     setFavorites(readFavorites())
@@ -27,6 +28,24 @@ export default function GalleryPage() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    images.forEach((image) => image.tags?.forEach((tag) => set.add(tag)))
+    return Array.from(set).sort()
+  }, [images])
+
+  const toggleTagFilter = useCallback((tag: string) => {
+    setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
+  }, [])
+
+  const visibleImages = useMemo(
+    () =>
+      activeTags.length === 0
+        ? images
+        : images.filter((image) => image.tags?.some((tag) => activeTags.includes(tag))),
+    [images, activeTags],
+  )
 
   const download = useCallback(async (image: GalleryImage) => {
     setDownloading(true)
@@ -73,17 +92,36 @@ export default function GalleryPage() {
             <ArrowLeft className="size-5" aria-hidden="true" />
             <span className="sr-only">Back</span>
           </Link>
-          <h1 className="text-2xl font-semibold">Community gallery ({images.length})</h1>
+          <h1 className="text-2xl font-semibold">Community gallery ({visibleImages.length})</h1>
         </div>
+        {allTags.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => toggleTagFilter(tag)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  activeTags.includes(tag)
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
           </div>
-        ) : images.length === 0 ? (
-          <p className="text-muted-foreground">No community uploads yet.</p>
+        ) : visibleImages.length === 0 ? (
+          <p className="text-muted-foreground">
+            {images.length === 0 ? "No community uploads yet." : "No uploads match the selected tags."}
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {images.map((image) => (
+            {visibleImages.map((image) => (
               <button
                 key={image.url}
                 onClick={() => setSelected(image)}
@@ -100,6 +138,11 @@ export default function GalleryPage() {
                   <p className="truncate text-xs text-muted-foreground" title={image.uploader ?? "Anonymous"}>
                     by {image.uploader || "Anonymous"}
                   </p>
+                  {image.tags && image.tags.length > 0 && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground/70" title={image.tags.join(", ")}>
+                      {image.tags.join(", ")}
+                    </p>
+                  )}
                 </div>
               </button>
             ))}
@@ -111,7 +154,12 @@ export default function GalleryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-lg rounded-xl border border-border bg-card p-4 shadow-lg">
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">by {selected.uploader || "Anonymous"}</p>
+              <div>
+                <p className="text-sm text-muted-foreground">by {selected.uploader || "Anonymous"}</p>
+                {selected.tags && selected.tags.length > 0 && (
+                  <p className="text-xs text-muted-foreground/70">{selected.tags.join(", ")}</p>
+                )}
+              </div>
               <button onClick={() => setSelected(null)} aria-label="Close" className="text-muted-foreground hover:text-foreground">
                 <X className="size-5" aria-hidden="true" />
               </button>

@@ -16,8 +16,8 @@ export async function GET(request: Request) {
 
   const images = blobs
     .map((b) => {
-      const { name, uploader } = parseUploadPathname(b.pathname)
-      return { url: b.url, name, uploader: uploader || undefined, uploadedAt: b.uploadedAt }
+      const { name, uploader, tags } = parseUploadPathname(b.pathname)
+      return { url: b.url, name, uploader: uploader || undefined, tags, uploadedAt: b.uploadedAt }
     })
     .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
 
