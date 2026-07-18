@@ -60,7 +60,7 @@ const SEARCH_SOURCES = [
   { name: "Pixabay", endpoint: "/api/search-pixabay" },
 ]
 
-const RECENT_HISTORY_SIZE = 8
+const RECENT_HISTORY_SIZE = 16
 const MAX_SHUFFLE_ATTEMPTS = 6
 const COMMUNITY_NAME = "Community uploads"
 const ALL_CATEGORY_NAMES = [...SOURCES.map((s) => s.name), COMMUNITY_NAME]
