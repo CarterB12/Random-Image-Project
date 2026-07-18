@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 const PREVIEW_SIZE = 300
 const ASPECT = 3 / 2
 const MIN_CROP_SIZE = 60
+const NAME_STORAGE_KEY = "uploader-display-name"
 
 type CropRect = { x: number; y: number; w: number; h: number }
 
@@ -15,11 +16,12 @@ type Props = {
   queuePosition?: number
   queueTotal?: number
   onCancel: () => void
-  onConfirm: (blob: Blob, fileName: string) => void
+  onConfirm: (blob: Blob, fileName: string, uploaderName: string) => void
 }
 
 export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, onConfirm }: Props) {
   const [imageUrl] = useState(() => URL.createObjectURL(file))
+  const [uploaderName, setUploaderName] = useState(() => window.localStorage.getItem(NAME_STORAGE_KEY) ?? "")
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const [rotation, setRotation] = useState(0)
   const [crop, setCrop] = useState<CropRect>({ x: 0, y: 0, w: 0, h: 0 })
@@ -159,12 +161,25 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
       })
 
       const baseName = file.name.replace(/\.[^.]+$/, "")
+      const trimmedName = uploaderName.trim()
+      window.localStorage.setItem(NAME_STORAGE_KEY, trimmedName)
       URL.revokeObjectURL(imageUrl)
-      onConfirm(blob, `${baseName}.jpg`)
+      onConfirm(blob, `${baseName}.jpg`, trimmedName)
     } finally {
       setSubmitting(false)
     }
-  }, [naturalSize, rotatedW, rotatedH, rotation, containScale, crop, imageUrl, file.name, onConfirm])
+  }, [
+    naturalSize,
+    rotatedW,
+    rotatedH,
+    rotation,
+    containScale,
+    crop,
+    imageUrl,
+    file.name,
+    uploaderName,
+    onConfirm,
+  ])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -172,6 +187,14 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
         <p className="mb-3 text-center text-sm font-medium">
           Crop &amp; rotate{queueTotal && queueTotal > 1 ? ` (${queuePosition} of ${queueTotal})` : ""}
         </p>
+        <input
+          type="text"
+          value={uploaderName}
+          onChange={(e) => setUploaderName(e.target.value)}
+          placeholder="Your name (shown as credit)"
+          maxLength={40}
+          className="mb-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring"
+        />
         <div
           className="relative mx-auto touch-none overflow-hidden rounded-lg bg-muted select-none"
           style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}

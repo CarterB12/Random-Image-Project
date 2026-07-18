@@ -52,7 +52,7 @@ const SOURCES = [
   },
 ]
 
-type UploadedImage = { url: string; name: string }
+type UploadedImage = { url: string; name: string; uploader?: string }
 
 const SEARCH_SOURCES = [
   { name: "Pexels", endpoint: "/api/search-pexels" },
@@ -141,6 +141,7 @@ export function RandomImage() {
     : activeUpload
       ? `Community upload: ${activeUpload.name}`
       : source.name
+  const displayCredit = credit || activeUpload?.uploader || ""
   const isFavorited = favorites.some((f) => f.url === url)
 
   const shuffle = useCallback(async () => {
@@ -321,15 +322,16 @@ export function RandomImage() {
     })
   }, [])
 
-  const uploadEditedImage = useCallback(async (blob: Blob, fileName: string) => {
+  const uploadEditedImage = useCallback(async (blob: Blob, fileName: string, uploaderName: string) => {
     setUploading(true)
     try {
       const formData = new FormData()
       formData.append("file", blob, fileName)
+      formData.append("uploader", uploaderName)
       const res = await fetch("/api/upload", { method: "POST", body: formData })
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
-      const newImage: UploadedImage = { url: data.url, name: data.name ?? fileName }
+      const newImage: UploadedImage = { url: data.url, name: data.name ?? fileName, uploader: data.uploader }
       setUploads((prev) => [...prev, newImage])
       setActiveUploadUrl(newImage.url)
       setCredit("")
@@ -376,14 +378,14 @@ export function RandomImage() {
               url,
               name: fileName,
               sourceName,
-              credit: credit || undefined,
+              credit: displayCredit || undefined,
               savedAt: Date.now(),
             },
           ]
       writeFavorites(next)
       return next
     })
-  }, [url, fileName, sourceName, credit])
+  }, [url, fileName, sourceName, displayCredit])
 
   return (
     <div className="w-full max-w-2xl">
@@ -546,7 +548,7 @@ export function RandomImage() {
         </div>
       )}
       <p className="mt-4 text-center text-xs text-muted-foreground">
-        Current source: {sourceName}.{credit && ` Photo by ${credit}.`}
+        Current source: {sourceName}.{displayCredit && ` Photo by ${displayCredit}.`}
       </p>
       <p className="mt-1 text-center text-xs">
         <Link href="/favorites" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
@@ -560,8 +562,8 @@ export function RandomImage() {
           queuePosition={queueTotal - fileQueue.length}
           queueTotal={queueTotal}
           onCancel={advanceQueue}
-          onConfirm={(blob, name) => {
-            uploadEditedImage(blob, name)
+          onConfirm={(blob, name, uploaderName) => {
+            uploadEditedImage(blob, name, uploaderName)
             advanceQueue()
           }}
         />

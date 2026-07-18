@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-type UploadedImage = { url: string; name: string; uploadedAt: string }
+type UploadedImage = { url: string; name: string; uploader?: string; uploadedAt: string }
 
 const STORAGE_KEY = "admin-passcode"
 
@@ -121,8 +121,9 @@ export default function AdminPage() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.url} alt={img.name} className="aspect-square w-full object-cover" />
                 <div className="flex items-center justify-between gap-2 p-2">
-                  <span className="truncate text-xs text-muted-foreground" title={img.name}>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground" title={img.name}>
                     {img.name}
+                    {img.uploader && <span className="block truncate">by {img.uploader}</span>}
                   </span>
                   <Button
                     variant="destructive"

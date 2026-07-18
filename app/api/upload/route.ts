@@ -19,10 +19,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "File is too large (max 10MB)" }, { status: 400 })
   }
 
+  const uploaderRaw = formData.get("uploader")
+  const uploader = (typeof uploaderRaw === "string" ? uploaderRaw : "")
+    .replace(/[^a-zA-Z0-9 _-]/g, "")
+    .trim()
+    .slice(0, 40)
+  const safeUploader = uploader || "Anonymous"
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-  const blob = await put(`uploads/${Date.now()}-${safeName}`, file, {
+  const blob = await put(`uploads/${Date.now()}/${safeUploader}/${safeName}`, file, {
     access: "public",
   })
 
-  return NextResponse.json({ url: blob.url, name: safeName })
+  return NextResponse.json({ url: blob.url, name: safeName, uploader: safeUploader })
 }

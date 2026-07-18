@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { del, list } from "@vercel/blob"
+import { parseUploadPathname } from "@/lib/uploads"
 
 function isAuthorized(request: Request) {
   const passcode = request.headers.get("x-admin-passcode")
@@ -14,11 +15,10 @@ export async function GET(request: Request) {
   const { blobs } = await list({ prefix: "uploads/" })
 
   const images = blobs
-    .map((b) => ({
-      url: b.url,
-      name: b.pathname.replace(/^uploads\/\d+-/, ""),
-      uploadedAt: b.uploadedAt,
-    }))
+    .map((b) => {
+      const { name, uploader } = parseUploadPathname(b.pathname)
+      return { url: b.url, name, uploader: uploader || undefined, uploadedAt: b.uploadedAt }
+    })
     .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
 
   return NextResponse.json({ images })
