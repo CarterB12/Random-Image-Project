@@ -652,6 +652,7 @@ export function RandomImage() {
               variant="secondary"
               size="icon"
               onClick={() => setIsFullscreen(false)}
+              onPointerDown={(e) => e.stopPropagation()}
               aria-label="Exit fullscreen"
               title="Exit fullscreen"
               className="absolute right-4 top-4 z-20"
