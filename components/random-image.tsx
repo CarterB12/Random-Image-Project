@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ImageEditorDialog } from "@/components/image-editor-dialog"
 import { readFavorites, writeFavorites } from "@/lib/favorites"
 
 const WIDTH = 1200
@@ -83,6 +84,7 @@ export function RandomImage() {
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [editingFile, setEditingFile] = useState<File | null>(null)
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [credit, setCredit] = useState("")
   const [loadId, setLoadId] = useState(0)
@@ -292,20 +294,26 @@ export function RandomImage() {
     return () => clearInterval(interval)
   }, [slideshow, shuffle])
 
-  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ""
     if (!file) return
+    setEditingFile(file)
+  }, [])
+
+  const uploadEditedImage = useCallback(async (blob: Blob, fileName: string) => {
+    setEditingFile(null)
     setUploading(true)
     try {
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", blob, fileName)
       const res = await fetch("/api/upload", { method: "POST", body: formData })
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
-      const newImage: UploadedImage = { url: data.url, name: data.name ?? file.name }
+      const newImage: UploadedImage = { url: data.url, name: data.name ?? fileName }
       setUploads((prev) => [...prev, newImage])
       setActiveUploadUrl(newImage.url)
+      setCredit("")
       setLoading(true)
       setLoadId((n) => n + 1)
     } catch (err) {
@@ -411,7 +419,7 @@ export function RandomImage() {
             type="file"
             accept="image/*"
             className="hidden"
-            onChange={handleUpload}
+            onChange={handleFileSelected}
           />
           <Button
             variant="secondary"
@@ -525,6 +533,13 @@ export function RandomImage() {
           View favorites{favorites.length > 0 ? ` (${favorites.length})` : ""}
         </Link>
       </p>
+      {editingFile && (
+        <ImageEditorDialog
+          file={editingFile}
+          onCancel={() => setEditingFile(null)}
+          onConfirm={uploadEditedImage}
+        />
+      )}
     </div>
   )
 }
