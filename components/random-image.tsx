@@ -290,6 +290,14 @@ export function RandomImage() {
     }
   }, [])
 
+  const manualShuffle = useCallback(() => {
+    setLastSwipe({
+      snapshot: { seed, sourceIndex, activeUploadUrl, dynamicUrl, credit, searchProvider },
+      likedUrl: null,
+    })
+    shuffle()
+  }, [seed, sourceIndex, activeUploadUrl, dynamicUrl, credit, searchProvider, shuffle])
+
   const performSearch = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -336,12 +344,9 @@ export function RandomImage() {
 
   useEffect(() => {
     if (!slideshow) return
-    const interval = setInterval(() => {
-      setLastSwipe(null)
-      shuffle()
-    }, 4000)
+    const interval = setInterval(manualShuffle, 4000)
     return () => clearInterval(interval)
-  }, [slideshow, shuffle])
+  }, [slideshow, manualShuffle])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -351,12 +356,11 @@ export function RandomImage() {
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
       if (editingFile) return
       e.preventDefault()
-      setLastSwipe(null)
-      shuffle()
+      manualShuffle()
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [shuffle, editingFile])
+  }, [manualShuffle, editingFile])
 
   const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -658,12 +662,7 @@ export function RandomImage() {
         </div>
         {!isFullscreen && (
         <div className="flex flex-col gap-2 p-4">
-          <Button
-            onClick={() => {
-              setLastSwipe(null)
-              shuffle()
-            }}
-          >
+          <Button onClick={manualShuffle}>
             <Shuffle className="size-4" aria-hidden="true" />
             Shuffle
           </Button>
