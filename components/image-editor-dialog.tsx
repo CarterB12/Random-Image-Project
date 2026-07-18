@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 const PREVIEW_SIZE = 300
 const ASPECT = 3 / 2
 const MIN_CROP_SIZE = 60
+const MAX_OUTPUT_WIDTH = 1600
 const NAME_STORAGE_KEY = "uploader-display-name"
 
 type CropRect = { x: number; y: number; w: number; h: number }
@@ -151,11 +152,15 @@ export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, o
       const cropW = crop.w * scaleToNatural
       const cropH = crop.h * scaleToNatural
 
+      const outputScale = Math.min(1, MAX_OUTPUT_WIDTH / cropW)
+      const outputW = Math.round(cropW * outputScale)
+      const outputH = Math.round(cropH * outputScale)
+
       const outCanvas = document.createElement("canvas")
-      outCanvas.width = Math.round(cropW)
-      outCanvas.height = Math.round(cropH)
+      outCanvas.width = outputW
+      outCanvas.height = outputH
       const octx = outCanvas.getContext("2d")!
-      octx.drawImage(rotatedCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+      octx.drawImage(rotatedCanvas, cropX, cropY, cropW, cropH, 0, 0, outputW, outputH)
 
       const blob: Blob = await new Promise((resolve, reject) => {
         outCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/jpeg", 0.92)

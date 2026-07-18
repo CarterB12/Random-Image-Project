@@ -55,6 +55,14 @@ const SOURCES = [
 
 type UploadedImage = { url: string; name: string; uploader?: string; tags?: string[] }
 
+type Candidate = {
+  isUpload: boolean
+  sourceIndex: number
+  seed: number
+  url: string
+  credit: string
+}
+
 const SEARCH_SOURCES = [
   { name: "Pexels", endpoint: "/api/search-pexels" },
   { name: "Unsplash", endpoint: "/api/search-unsplash" },
@@ -129,9 +137,13 @@ export function RandomImage() {
   const enabledSourcesRef = useRef<string[]>(ALL_CATEGORY_NAMES)
   const searchQueryRef = useRef("")
   const dragStartRef = useRef({ x: 0, active: false })
+  const queuedCandidateRef = useRef<Candidate | null>(null)
 
   useEffect(() => {
     uploadsRef.current = uploads
+    // A newly added/removed upload can change what the pool should offer,
+    // so a candidate queued before this change is no longer trustworthy.
+    queuedCandidateRef.current = null
   }, [uploads])
 
   useEffect(() => {
@@ -141,10 +153,12 @@ export function RandomImage() {
 
   useEffect(() => {
     enabledSourcesRef.current = enabledSources
+    queuedCandidateRef.current = null
   }, [enabledSources])
 
   useEffect(() => {
     searchQueryRef.current = searchQuery
+    queuedCandidateRef.current = null
   }, [searchQuery])
 
   const computeFit = useCallback(() => {
@@ -180,6 +194,94 @@ export function RandomImage() {
   const displayCredit = credit || activeUpload?.uploader || ""
   const isFavorited = favorites.some((f) => f.url === url)
 
+  // Picks a candidate without touching component state, so it can run either
+  // synchronously (shuffle has nothing queued yet) or ahead of time in the
+  // background (prepareNext), reading only refs that are safe from either.
+  const selectCandidate = useCallback(async (): Promise<Candidate | null> => {
+    const enabled = enabledSourcesRef.current
+    const activeSourceIndices = SOURCES.map((_, i) => i).filter((i) => enabled.includes(SOURCES[i].name))
+    const includeCommunity = enabled.includes(COMMUNITY_NAME)
+    const activeUploads = includeCommunity ? uploadsRef.current : []
+
+    // If nothing is actually selectable (e.g. every source unchecked, or only
+    // an empty community pool left checked), fall back to everything rather
+    // than leaving the app with nothing to shuffle.
+    const nothingSelectable = activeSourceIndices.length === 0 && activeUploads.length === 0
+    const effectiveSourceIndices = nothingSelectable ? SOURCES.map((_, i) => i) : activeSourceIndices
+    const currentUploads = nothingSelectable ? uploadsRef.current : activeUploads
+    const poolSize = effectiveSourceIndices.length + currentUploads.length
+    if (poolSize === 0) return null
+    // Cap how much of the pool counts as "recently shown" so a small pool
+    // (e.g. few community uploads) doesn't get entirely blocked out.
+    const effectiveHistorySize = Math.max(1, Math.min(RECENT_HISTORY_SIZE, Math.floor(poolSize / 2)))
+    const recentHistory = recentHistoryRef.current.slice(-effectiveHistorySize)
+
+    for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
+      const pick = Math.floor(Math.random() * poolSize)
+
+      if (pick < effectiveSourceIndices.length) {
+        const sourceIdx = effectiveSourceIndices[pick]
+        const candidateSource = SOURCES[sourceIdx]
+        const newSeed = Math.floor(Math.random() * 100000)
+        let url: string
+        let creditName = ""
+        if (candidateSource.dynamic) {
+          const res = await fetch(candidateSource.endpoint!)
+          const data = await res.json()
+          url = data.url ?? ""
+          creditName = data.credit ?? ""
+        } else {
+          url = candidateSource.build!(newSeed)
+        }
+
+        if (url && recentHistory.includes(url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+          continue
+        }
+
+        return { isUpload: false, sourceIndex: sourceIdx, seed: newSeed, url, credit: creditName }
+      } else {
+        const candidate = currentUploads[pick - effectiveSourceIndices.length]
+
+        if (recentHistory.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
+          continue
+        }
+
+        return { isUpload: true, sourceIndex: 0, seed: 0, url: candidate.url, credit: "" }
+      }
+    }
+
+    return null
+  }, [])
+
+  const applyCandidate = useCallback((candidate: Candidate) => {
+    if (candidate.isUpload) {
+      setActiveUploadUrl(candidate.url)
+      setCredit("")
+    } else {
+      setActiveUploadUrl(null)
+      setSourceIndex(candidate.sourceIndex)
+      setSeed(candidate.seed)
+      if (SOURCES[candidate.sourceIndex].dynamic) {
+        setDynamicUrl(candidate.url)
+      }
+      setCredit(candidate.credit)
+    }
+    recentHistoryRef.current = [...recentHistoryRef.current, candidate.url].slice(-RECENT_HISTORY_SIZE)
+  }, [])
+
+  // Best-effort: precompute and warm the browser cache for whichever image
+  // the *next* shuffle will show, so it can display instantly instead of
+  // waiting on a network fetch. Never touches component state.
+  const prepareNext = useCallback(async () => {
+    if (searchQueryRef.current) return
+    const candidate = await selectCandidate()
+    if (!candidate) return
+    queuedCandidateRef.current = candidate
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.src = candidate.url
+  }, [selectCandidate])
+
   const shuffle = useCallback(async () => {
     setLoading(true)
     setLoadId((id) => id + 1)
@@ -208,87 +310,13 @@ export function RandomImage() {
       return
     }
 
-    const enabled = enabledSourcesRef.current
-    const activeSourceIndices = SOURCES.map((_, i) => i).filter((i) => enabled.includes(SOURCES[i].name))
-    const includeCommunity = enabled.includes(COMMUNITY_NAME)
-    const activeUploads = includeCommunity ? uploadsRef.current : []
+    const queued = queuedCandidateRef.current
+    queuedCandidateRef.current = null
+    const candidate = queued ?? (await selectCandidate())
+    if (candidate) applyCandidate(candidate)
 
-    // If nothing is actually selectable (e.g. every source unchecked, or only
-    // an empty community pool left checked), fall back to everything rather
-    // than leaving the app with nothing to shuffle.
-    const nothingSelectable = activeSourceIndices.length === 0 && activeUploads.length === 0
-    const effectiveSourceIndices = nothingSelectable ? SOURCES.map((_, i) => i) : activeSourceIndices
-    const currentUploads = nothingSelectable ? uploadsRef.current : activeUploads
-    const poolSize = effectiveSourceIndices.length + currentUploads.length
-    // Cap how much of the pool counts as "recently shown" so a small pool
-    // (e.g. few community uploads) doesn't get entirely blocked out.
-    const effectiveHistorySize = Math.max(1, Math.min(RECENT_HISTORY_SIZE, Math.floor(poolSize / 2)))
-    const recentHistory = recentHistoryRef.current.slice(-effectiveHistorySize)
-
-    let candidateIsUpload = false
-    let candidateSourceIndex = 0
-    let candidateSeed = 0
-    let candidateUrl = ""
-    let candidateCredit = ""
-
-    for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt++) {
-      const pick = Math.floor(Math.random() * poolSize)
-
-      if (pick < effectiveSourceIndices.length) {
-        const sourceIdx = effectiveSourceIndices[pick]
-        const candidateSource = SOURCES[sourceIdx]
-        const newSeed = Math.floor(Math.random() * 100000)
-        let url: string
-        let creditName = ""
-        if (candidateSource.dynamic) {
-          const res = await fetch(candidateSource.endpoint!)
-          const data = await res.json()
-          url = data.url ?? ""
-          creditName = data.credit ?? ""
-        } else {
-          url = candidateSource.build!(newSeed)
-        }
-
-        if (url && recentHistory.includes(url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
-          continue
-        }
-
-        candidateIsUpload = false
-        candidateSourceIndex = sourceIdx
-        candidateSeed = newSeed
-        candidateUrl = url
-        candidateCredit = creditName
-        break
-      } else {
-        const candidate = currentUploads[pick - effectiveSourceIndices.length]
-
-        if (recentHistory.includes(candidate.url) && attempt < MAX_SHUFFLE_ATTEMPTS - 1) {
-          continue
-        }
-
-        candidateIsUpload = true
-        candidateUrl = candidate.url
-        break
-      }
-    }
-
-    if (candidateIsUpload) {
-      setActiveUploadUrl(candidateUrl)
-      setCredit("")
-    } else {
-      setActiveUploadUrl(null)
-      setSourceIndex(candidateSourceIndex)
-      setSeed(candidateSeed)
-      if (SOURCES[candidateSourceIndex].dynamic) {
-        setDynamicUrl(candidateUrl)
-      }
-      setCredit(candidateCredit)
-    }
-
-    if (candidateUrl) {
-      recentHistoryRef.current = [...recentHistoryRef.current, candidateUrl].slice(-RECENT_HISTORY_SIZE)
-    }
-  }, [])
+    prepareNext()
+  }, [selectCandidate, applyCandidate, prepareNext])
 
   const manualShuffle = useCallback(() => {
     setLastSwipe({
