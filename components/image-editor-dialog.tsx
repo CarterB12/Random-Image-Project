@@ -12,11 +12,13 @@ type CropRect = { x: number; y: number; w: number; h: number }
 
 type Props = {
   file: File
+  queuePosition?: number
+  queueTotal?: number
   onCancel: () => void
   onConfirm: (blob: Blob, fileName: string) => void
 }
 
-export function ImageEditorDialog({ file, onCancel, onConfirm }: Props) {
+export function ImageEditorDialog({ file, queuePosition, queueTotal, onCancel, onConfirm }: Props) {
   const [imageUrl] = useState(() => URL.createObjectURL(file))
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const [rotation, setRotation] = useState(0)
@@ -167,9 +169,11 @@ export function ImageEditorDialog({ file, onCancel, onConfirm }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-lg">
-        <p className="mb-3 text-center text-sm font-medium">Crop &amp; rotate</p>
+        <p className="mb-3 text-center text-sm font-medium">
+          Crop &amp; rotate{queueTotal && queueTotal > 1 ? ` (${queuePosition} of ${queueTotal})` : ""}
+        </p>
         <div
-          className="relative mx-auto overflow-hidden rounded-lg bg-muted"
+          className="relative mx-auto touch-none overflow-hidden rounded-lg bg-muted select-none"
           style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
         >
           <div className="flex h-full w-full items-center justify-center">
@@ -189,7 +193,7 @@ export function ImageEditorDialog({ file, onCancel, onConfirm }: Props) {
           {naturalSize && (
             <div
               onPointerDown={onRectPointerDown}
-              className="absolute cursor-move border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"
+              className="absolute touch-none cursor-move border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"
               style={{
                 left: `calc(50% - ${displayW / 2}px + ${crop.x}px)`,
                 top: `calc(50% - ${displayH / 2}px + ${crop.y}px)`,
@@ -199,7 +203,7 @@ export function ImageEditorDialog({ file, onCancel, onConfirm }: Props) {
             >
               <div
                 onPointerDown={onHandlePointerDown}
-                className="absolute -bottom-2 -right-2 size-4 cursor-nwse-resize rounded-full border-2 border-white bg-foreground"
+                className="absolute -bottom-2 -right-2 size-4 touch-none cursor-nwse-resize rounded-full border-2 border-white bg-foreground"
               />
             </div>
           )}
@@ -227,7 +231,7 @@ export function ImageEditorDialog({ file, onCancel, onConfirm }: Props) {
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={handleCancel} disabled={submitting}>
             <X className="size-4" aria-hidden="true" />
-            Cancel
+            {queueTotal && queueTotal > 1 && (queuePosition ?? 0) < queueTotal ? "Skip" : "Cancel"}
           </Button>
           <Button className="flex-1" onClick={handleConfirm} disabled={submitting || !naturalSize}>
             <Check className="size-4" aria-hidden="true" />

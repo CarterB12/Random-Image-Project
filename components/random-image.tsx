@@ -85,6 +85,9 @@ export function RandomImage() {
   const [downloading, setDownloading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [editingFile, setEditingFile] = useState<File | null>(null)
+  const [editingFileKey, setEditingFileKey] = useState(0)
+  const [fileQueue, setFileQueue] = useState<File[]>([])
+  const [queueTotal, setQueueTotal] = useState(0)
   const [dynamicUrl, setDynamicUrl] = useState("")
   const [credit, setCredit] = useState("")
   const [loadId, setLoadId] = useState(0)
@@ -295,14 +298,30 @@ export function RandomImage() {
   }, [slideshow, shuffle])
 
   const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const files = Array.from(e.target.files ?? [])
     e.target.value = ""
-    if (!file) return
-    setEditingFile(file)
+    if (files.length === 0) return
+    setQueueTotal(files.length)
+    setFileQueue(files.slice(1))
+    setEditingFile(files[0])
+    setEditingFileKey((k) => k + 1)
+  }, [])
+
+  const advanceQueue = useCallback(() => {
+    setFileQueue((prev) => {
+      if (prev.length === 0) {
+        setEditingFile(null)
+        setQueueTotal(0)
+        return prev
+      }
+      const [next, ...rest] = prev
+      setEditingFile(next)
+      setEditingFileKey((k) => k + 1)
+      return rest
+    })
   }, [])
 
   const uploadEditedImage = useCallback(async (blob: Blob, fileName: string) => {
-    setEditingFile(null)
     setUploading(true)
     try {
       const formData = new FormData()
@@ -418,6 +437,7 @@ export function RandomImage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             onChange={handleFileSelected}
           />
@@ -535,9 +555,15 @@ export function RandomImage() {
       </p>
       {editingFile && (
         <ImageEditorDialog
+          key={editingFileKey}
           file={editingFile}
-          onCancel={() => setEditingFile(null)}
-          onConfirm={uploadEditedImage}
+          queuePosition={queueTotal - fileQueue.length}
+          queueTotal={queueTotal}
+          onCancel={advanceQueue}
+          onConfirm={(blob, name) => {
+            uploadEditedImage(blob, name)
+            advanceQueue()
+          }}
         />
       )}
     </div>
